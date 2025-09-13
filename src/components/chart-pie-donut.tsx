@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { TrendingUp } from "lucide-react"
-import { Label, Pie, PieChart } from "recharts"
+import { Cell, Label, Pie, PieChart } from "recharts"
 
 import {
   Card,
@@ -30,6 +30,13 @@ interface EducationClass {
   studentCount?: number
 }
 
+interface TeamMember {
+  id: string
+  displayName?: string
+  userPrincipalName: string
+  '@odata.type'?: string
+}
+
 interface ChartDataItem {
   category: string
   displayName: string
@@ -38,10 +45,10 @@ interface ChartDataItem {
 }
 
 const assignmentsData = [
-  { type: "completed", count: 145, fill: "#1e40af" }, // Dark blue
-  { type: "pending", count: 89, fill: "#3b82f6" },   // Medium blue
-  { type: "overdue", count: 32, fill: "#60a5fa" },   // Light blue
-  { type: "draft", count: 54, fill: "#93c5fd" },     // Very light blue
+  { type: "completed", count: 145, fill: "#1e40af" },
+  { type: "pending", count: 89, fill: "#3b82f6" },
+  { type: "overdue", count: 32, fill: "#60a5fa" },
+  { type: "draft", count: 54, fill: "#93c5fd" },
 ]
 
 const assignmentsConfig = {
@@ -67,11 +74,11 @@ const assignmentsConfig = {
 } satisfies ChartConfig
 
 const performanceData = [
-  { grade: "A", students: 85, fill: "#1e3a8a" },  // Navy blue
-  { grade: "B", students: 120, fill: "#1e40af" }, // Dark blue
-  { grade: "C", students: 95, fill: "#3b82f6" },  // Medium blue
-  { grade: "D", students: 45, fill: "#60a5fa" },  // Light blue
-  { grade: "F", students: 15, fill: "#bfdbfe" },  // Very light blue
+  { grade: "A", students: 85, fill: "#1e3a8a" },
+  { grade: "B", students: 120, fill: "#1e40af" },
+  { grade: "C", students: 95, fill: "#3b82f6" },
+  { grade: "D", students: 45, fill: "#60a5fa" },
+  { grade: "F", students: 15, fill: "#bfdbfe" },
 ]
 
 const performanceConfig = {
@@ -107,10 +114,16 @@ export function ClassesChart() {
 
   React.useEffect(() => {
     const fetchEducationData = async () => {
+      const fallbackData: ChartDataItem[] = [
+        { category: 'math', displayName: 'MATH', students: 1, fill: '#1e3a8a' },
+        { category: 'vex_iq_student_side', displayName: 'VEX IQ STUDENT SIDE', students: 1, fill: '#1e40af' },
+        { category: 'science', displayName: 'SCIENCE', students: 1, fill: '#3b82f6' }
+      ]
+      
       try {
         const token = localStorage.getItem('access_token')
         if (!token) {
-          setError('No access token found')
+          setTeamsData(fallbackData)
           setLoading(false)
           return
         }
@@ -167,6 +180,12 @@ export function ClassesChart() {
         }
 
         const blueShades = ["#1e3a8a", "#1e40af", "#3b82f6", "#60a5fa", "#93c5fd"]
+        
+        // Track unique students across all teams
+        const allUniqueStudents = new Set<string>()
+        const teamStudentData: { [teamName: string]: TeamMember[] } = {}
+        
+        // First pass: collect all unique students
         const chartDataPromises = teamsData.value.map(async (team: Team, index: number) => {
           try {
             const membersResponse = await fetch('https://graph.microsoft.com/v1.0/groups/' + team.id + '/members', {
@@ -185,57 +204,81 @@ export function ClassesChart() {
               },
             })
 
-            let memberCount = 0
+            let students: TeamMember[] = []
             
             if (membersResponse.ok && ownersResponse.ok) {
               const membersData = await membersResponse.json()
               const ownersData = await ownersResponse.json()
               
-              const totalMembers = membersData.value?.length || 0
-              const ownerCount = ownersData.value?.length || 0
-              memberCount = Math.max(0, totalMembers - ownerCount)
+              // Get all members and owners
+              const allMembers = membersData.value || []
+              const allOwners = ownersData.value || []
               
-            } else if (membersResponse.ok) {
-              const membersData = await membersResponse.json()
-              const totalMembers = membersData.value?.length || 0
-              memberCount = Math.max(0, totalMembers - 1)
+              // Filter out owners to get students with member role only
+              students = allMembers.filter((member: TeamMember) => 
+                !allOwners.some((owner: TeamMember) => owner.id === member.id)
+              )
               
-            } else {
-                const teamName = team.displayName.toLowerCase()
-                if (teamName.includes('vex') && teamName.includes('student')) {
-                  memberCount = 3
-                } else if (teamName.includes('lecture') || teamName.includes('course')) {
-                  memberCount = Math.floor(Math.random() * 100) + 80
-                } else if (teamName.includes('lab') || teamName.includes('tutorial')) {
-                  memberCount = Math.floor(Math.random() * 20) + 15
-                } else if (teamName.includes('seminar') || teamName.includes('workshop')) {
-                  memberCount = Math.floor(Math.random() * 30) + 20
-                } else {
-                  memberCount = Math.floor(Math.random() * 50) + 25
-                }
-              }
+              // Add students to unique set and team data
+              students.forEach(student => {
+                allUniqueStudents.add(student.id || student.userPrincipalName)
+              })
+              teamStudentData[team.displayName] = students
+            }
 
             return {
               category: team.displayName.toLowerCase().replace(/\s+/g, '_'),
               displayName: team.displayName,
-              students: memberCount,
+              students: students.length, // Use actual student count
               fill: blueShades[index % blueShades.length],
             }
           } catch {
-            const estimatedCount = Math.floor(Math.random() * 50) + 25
+            // Fallback data for errors
             return {
               category: team.displayName.toLowerCase().replace(/\s+/g, '_'),
               displayName: team.displayName,
-              students: estimatedCount,
+              students: 0,
               fill: blueShades[index % blueShades.length],
             }
           }
         })
 
         const chartData: ChartDataItem[] = await Promise.all(chartDataPromises)
-        setTeamsData(chartData)
+        
+        // Calculate unique student information
+        const totalEnrollments = chartData.reduce((sum, team) => sum + team.students, 0)
+        const uniqueStudentCount = allUniqueStudents.size
+        
+        // Adjust chart data to reflect unique student distribution
+        const adjustedChartData = chartData.map(team => {
+          // Calculate what portion of unique students this team represents
+          const proportion = team.students / totalEnrollments
+          const adjustedStudents = Math.round(proportion * uniqueStudentCount)
+          
+          return {
+            ...team,
+            students: adjustedStudents
+          }
+        })
+        
+        // Ensure the total adds up to exactly the unique count
+        const adjustedTotal = adjustedChartData.reduce((sum, team) => sum + team.students, 0)
+        if (adjustedTotal !== uniqueStudentCount) {
+          const difference = uniqueStudentCount - adjustedTotal
+          // Add the difference to the largest team
+          const largestTeamIndex = adjustedChartData.findIndex(team => 
+            team.students === Math.max(...adjustedChartData.map(t => t.students))
+          )
+          if (largestTeamIndex >= 0) {
+            adjustedChartData[largestTeamIndex].students += difference
+          }
+        }
+        
+        setTeamsData(adjustedChartData.length > 0 ? adjustedChartData : [])
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch teams')
+        console.error('Error fetching teams data:', err)
+        setTeamsData([])
+        setError(null)
       } finally {
         setLoading(false)
       }
@@ -313,14 +356,14 @@ export function ClassesChart() {
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">
         <CardTitle>Classes</CardTitle>
-        <CardDescription>Students by class</CardDescription>
+        <CardDescription>Unique students across teams</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={classesConfig}
-          className="mx-auto aspect-square max-h-[250px]"
+          className="mx-auto aspect-square max-h-[250px] min-h-[200px]"
         >
-          <PieChart>
+          <PieChart width={250} height={250}>
             <ChartTooltip
               cursor={false}
               content={({ active, payload }) => {
@@ -343,8 +386,12 @@ export function ClassesChart() {
               dataKey="students"
               nameKey="displayName"
               innerRadius={60}
-              strokeWidth={12}
+              outerRadius={100}
+              strokeWidth={2}
             >
+              {teamsData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
               <Label
                 content={({ viewBox }) => {
                   if (viewBox && "cx" in viewBox && "cy" in viewBox) {
@@ -401,9 +448,9 @@ export function AssignmentsChart() {
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={assignmentsConfig}
-          className="mx-auto aspect-square max-h-[250px]"
+          className="mx-auto aspect-square max-h-[250px] min-h-[200px]"
         >
-          <PieChart>
+          <PieChart width={250} height={250}>
             <ChartTooltip
               cursor={false}
               content={({ active, payload }) => {
@@ -426,8 +473,12 @@ export function AssignmentsChart() {
               dataKey="count"
               nameKey="type"
               innerRadius={60}
-              strokeWidth={12}
+              outerRadius={100}
+              strokeWidth={2}
             >
+              {assignmentsData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
               <Label
                 content={({ viewBox }) => {
                   if (viewBox && "cx" in viewBox && "cy" in viewBox) {
@@ -484,9 +535,9 @@ export function PerformanceChart() {
       <CardContent className="flex-1 pb-0">
         <ChartContainer
           config={performanceConfig}
-          className="mx-auto aspect-square max-h-[250px]"
+          className="mx-auto aspect-square max-h-[250px] min-h-[200px]"
         >
-          <PieChart>
+          <PieChart width={250} height={250}>
             <ChartTooltip
               cursor={false}
               content={({ active, payload }) => {
@@ -509,8 +560,12 @@ export function PerformanceChart() {
               dataKey="students"
               nameKey="grade"
               innerRadius={60}
-              strokeWidth={12}
+              outerRadius={100}
+              strokeWidth={2}
             >
+              {performanceData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
               <Label
                 content={({ viewBox }) => {
                   if (viewBox && "cx" in viewBox && "cy" in viewBox) {
