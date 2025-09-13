@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
       },
       body: new URLSearchParams({
         client_id: process.env.NEXT_PUBLIC_AZURE_CLIENT_ID!,
-        scope: 'https://graph.microsoft.com/Team.ReadBasic.All https://graph.microsoft.com/User.Read'
+        scope: 'https://graph.microsoft.com/Team.ReadBasic.All https://graph.microsoft.com/User.Read https://graph.microsoft.com/Channel.ReadBasic.All https://graph.microsoft.com/ChannelMessage.Read.All https://graph.microsoft.com/Group.ReadWrite.All https://graph.microsoft.com/EduAssignments.Read https://graph.microsoft.com/EduRoster.Read https://graph.microsoft.com/EduAdministration.Read https://graph.microsoft.com/EduCurricula.Read'
       })
     })
 
